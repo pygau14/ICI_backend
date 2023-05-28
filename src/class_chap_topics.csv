@@ -1,0 +1,13 @@
+Class|Chapter_Name|Topics_List
+9th|Chemical Reactions|{"Characteristics of Chemical Reactions","Chemical Equation","Types of Chemical Reactions","Combustion and Flame"}
+9th|Atoms and Molecules|{"Laws of Chemical Combination","Dalton's Atomic Theory","Atomic and Molecular Masses","Mole Concept and Molar Masses","Percentage Composition","Molecular Formula","Chemical Equations and Stoichiometry"}
+10th|Real Numbers|{"Euclid’s Division Lemma and Algorithm","Fundamental Theorem of Arithmetic","HCF and LCM"}
+10th|Polynomials|{"Geometrical meaning of the zeroes of a polynomial","Relationship between zeroes and coefficients of a polynomial with one variable"}
+11th|Relations and Functions|{"Ordered pairs, Cartesian product of sets","Relation, Types of relations","Functions, Domain, codomain and range, types of functions"}
+11th|Sets, Relations and Functions|{"Sets and their representation","Union, intersection and complement of sets and their algebraic properties","Relations, Types of relations, equivalence relations"}
+12th|Electrostatics|{"Electric Charges and Fields","Electric Dipole","Gauss’s Law","Electric Potential","Potential due to a Point Charge","Potential due to an Electric Dipole","Potential Energy of a System of Charges","Electric Field Lines","Continuous Charge Distribution"}
+12th|Current Electricity|{"Electric Current","Ohm's Law","Electrical Energy and Power","Series Combination of Resistors","Parallel Combination of Resistors","Electric Cells","EMF of a Cell","Internal Resistance of a Cell","Potential Difference and External Resistance","Kirchhoff's Laws","Wheatstone Bridge"}
+JEE|Complex Numbers|{"Introduction of Complex Numbers","Representation of complex numbers","Modulus and Argument of complex numbers","Conjugate of a Complex Number","Properties of Modulus","Principal Argument","Polar Representation"}
+JEE|Functions|{"Inverse functions","Types of Inverse Functions","Logarithmic Functions and Their Graphs","Properties of Logarithmic Functions","Exponential Functions and Their Graphs","Properties of Exponential Functions","Logarithmic and Exponential Equations"}
+NEET|Cell Structure and Functions|{"Overview of Cell","Prokaryotic Cell and Eukaryotic Cell","Cell Membrane","Endomembrane System","Mitochondria","Plastids","Ribosomes","Cytoskeleton","Centrosome and Centrioles","Cilia and Flagella","Microbodies","Nucleus","Chromatin","Nucleolus","Nuclear Membrane","DNA Packaging"}
+NEET|Human Physiology|{"Digestive System","Respiratory System","Circulatory System","Excretory System","Nervous System","Endocrine System","Muscular System","Skeletal System","Reproductive System","Immune System"}
