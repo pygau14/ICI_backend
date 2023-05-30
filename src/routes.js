@@ -396,6 +396,45 @@ router.get('/question-test',upload.none(),async (req,res)=>{
     res.status(401).json({message : 'Internal server Error'});
   }
 });
+
+router.get('api/totalStudents',upload.none(),async (req,res)=>{
+  try {
+    pool.query('SEELCT * FROM users',(err,results)=>{
+      if(err){
+        console.log(err);
+        res.status(500).json({message:'Internal server Error'});
+      }
+      res.status(200).json(results);
+    })
+  }catch{
+    console.log('Error');
+    res.status(500).json({message:'Internal server Error'});
+  }
+});
+
+// Route to fetch paid students
+app.get('/api/paidStudents', (req, res) => {
+  pool.query('SELECT * FROM paid_users', (err, results) => {
+    if (err) {
+      console.error('Error fetching paid students:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+// Route to fetch total questions
+app.get('/api/totalQuestions', (req, res) => {
+  pool.query('SELECT COUNT(*) AS totalQuestions FROM class_questionSet', (err, results) => {
+    if (err) {
+      console.error('Error fetching total questions:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      res.status(200).json({ totalQuestions: results[0].totalQuestions });
+    }
+  });
+});
  
 
 module.exports =router; 
