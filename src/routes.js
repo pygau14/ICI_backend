@@ -399,7 +399,7 @@ router.get('/question-test',upload.none(),async (req,res)=>{
 
 router.get('api/totalStudents',upload.none(),async (req,res)=>{
   try {
-    pool.query('SEELCT * FROM users',(err,results)=>{
+    pool.query('SELECT * FROM users',(err,results)=>{
       if(err){
         console.log(err);
         res.status(500).json({message:'Internal server Error'});
@@ -413,7 +413,7 @@ router.get('api/totalStudents',upload.none(),async (req,res)=>{
 });
 
 // Route to fetch paid students
-app.get('/api/paidStudents', (req, res) => {
+router.get('/api/paidStudents', (req, res) => {
   pool.query('SELECT * FROM paid_users', (err, results) => {
     if (err) {
       console.error('Error fetching paid students:', err);
@@ -425,7 +425,7 @@ app.get('/api/paidStudents', (req, res) => {
 });
 
 // Route to fetch total questions
-app.get('/api/totalQuestions', (req, res) => {
+router.get('/api/totalQuestions', (req, res) => {
   pool.query('SELECT COUNT(*) AS totalQuestions FROM class_questionSet', (err, results) => {
     if (err) {
       console.error('Error fetching total questions:', err);
