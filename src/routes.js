@@ -15,7 +15,7 @@ const upload = multer({storage : storage});
 
 //sign up route
 router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
-  const {name, email , password , mobile_no, dob , country , state , city , street_address , school_name, institute_name , courses , subjects } = req.body;
+  const {name, email , password ,doj, mobile_no, dob , country , state , city , street_address , school_name, institute_name , courses , subjects } = req.body;
   const profile_picture = req.file ? req.file.buffer : null ;
 
 
@@ -27,7 +27,7 @@ router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
 
   try {
     try {
-      await pool.query('INSERT INTO users (name, email, password) VALUES (?, ?, ?)',[name, email , hashedPassword],(error,result)=>{
+      await pool.query('INSERT INTO users (name, email, password,doj) VALUES (?, ?, ?)',[name, email , hashedPassword,doj],(error,result)=>{
         if(error){
           console.log(error);
           if(error.errno == 1062){
@@ -106,6 +106,27 @@ router.post('/login',upload.none(),async(req,res)=>{
     res.status(500).json({ message: 'Internal server error' });
   }
 });
+
+
+router.post('/admin-login',upload.none(),async (req,res)=>{
+  const {email , password}  =req.body;
+
+  try{
+    pool.query('SELECT * FROM admin_users WHERE email = ? AND PASSWORD = ?',[email, password],(err, result)=>{
+      if(err){
+        console.log(err);
+        res.json(500).json({message : 'Internal Server error'});
+      }else {
+        const token = jwt.sign({userID : result[0].id,name : result[0].name, email : result[0].email},'secret',{ expiresIn: '1h' });
+        res.cookie('token', token, { httpOnly: true });
+        res.status(200).json({token : token ,message : 'Login Sucessful', userID: result[0].id, name : result[0].name,email : result[0].email});
+      }
+    })
+  }catch{
+    console.log('Error');
+    res.json(500).json({message : 'Internal Server error'});
+  }
+})
 
 
 router.get('/subjects/:class',upload.none(),async (req,res)=>{
@@ -397,13 +418,14 @@ router.get('/question-test',upload.none(),async (req,res)=>{
   }
 });
 
-router.get('api/totalStudents',upload.none(),async (req,res)=>{
+router.get('/api/totalStudents',upload.none(),async (req,res)=>{
   try {
     pool.query('SELECT * FROM users',(err,results)=>{
       if(err){
         console.log(err);
         res.status(500).json({message:'Internal server Error'});
       }
+      console.log(results);
       res.status(200).json(results);
     })
   }catch{
@@ -425,16 +447,279 @@ router.get('/api/paidStudents', (req, res) => {
 });
 
 // Route to fetch total questions
-router.get('/api/totalQuestions', (req, res) => {
-  pool.query('SELECT COUNT(*) AS totalQuestions FROM class_questionSet', (err, results) => {
+router.get('/api/totalTests', (req, res) => {
+  pool.query('SELECT question_set FROM class_questionSet', (err, results) => {
     if (err) {
       console.error('Error fetching total questions:', err);
       res.status(500).json({ error: 'Internal Server Error' });
     } else {
-      res.status(200).json({ totalQuestions: results[0].totalQuestions });
+      const newArr = [];
+      results.map(result=>newArr.push(result.question_set));
+      const result  = [...new Set(newArr)];
+      res.status(200).json(result);
     }
   });
 });
- 
+
+router.post('/admin/add-student',upload.none(),async (req,res)=>{
+  const {name , email , password , mobile_no,doj} = req.body;
+
+  const hashedPassword  = await bcrypt.hash(password,10);
+
+  try{
+    pool.query('INSERT INTO users (name, email, mobile_no, password,doj) VALUES (?, ?, ?, ?,?)',[name , email,mobile_no, hashedPassword,doj],(err,results)=>{
+      if(err){
+        console.log('Error');
+        res.status(500).json({message:'Internal Server Error'});
+      }
+      res.status(200).json({message : 'Data Inserted succesfully'});
+      console.log('Data Inserted succesfully')
+    })
+  }catch{
+    console.log('Error');
+    res.status(500).json({message:'Internal Server Error'});
+  }
+});
+
+
+router.post('/addquestionTest',upload.none(),async (req,res)=>{
+  const {className , subject_name , chapter_name, topic_name , duration , full_marks,pass_marks, minus_marks , instruction} = req.body;
+  console.log(className , subject_name , chapter_name, topic_name , duration , full_marks,pass_marks, minus_marks , instruction);
+  try{
+    pool.query('INSERT INTO test_description (class , subject_name, chapter_name , topic_name , full_marks , pass_marks , minus_marks , duration , Instructions ) VALUES (?,?,?,?,?,?,?,?,?)',[className , subject_name , chapter_name, topic_name ,full_marks,pass_marks, minus_marks , duration , instruction ],(err,results)=>{
+      if(err){
+        console.log(err);
+        res.status(500).json({message:'Internal Server Error'});
+      }
+      else {
+        console.log('Data Inserted succesfully');
+       
+      const query = `SELECT test_id FROM test_description WHERE class = '${className}' AND subject_name = '${subject_name}' AND chapter_name = '${chapter_name}' AND topic_name = '${topic_name}' AND full_marks = '${full_marks}' AND pass_marks = '${pass_marks}' AND minus_marks = '${minus_marks}' AND duration = '${duration}' AND Instructions = '${instruction}' `;
+      pool.query(query,(error,result)=>{
+        if(error){
+          console.log(error);
+
+        }
+        console.log(result);
+        res.status(200).json({message : 'data inserted sucessfully' ,data : result[0].test_id});
+      })
+      }
+    })
+  }catch{
+    console.log('Error');
+    res.status(500).json({message:'Internal Server Error'});
+  }
+});
+
+// API endpoint to receive selected questions from frontend and save them in the database
+router.post('/save-selected-questions',upload.none(), async (req, res) => {
+  const testId = req.body.test_id;
+  const selectedQuestions = req.body.questions;
+  const status = req.body.status;
+
+  let tableName ="";
+  if(status === 'save'){
+    tableName = 'save_test_'+testId;
+  }else{
+    tableName = "test_"+testId;
+  }
+
+  // Create the table with the name "test_test_id"
+  const createTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName} (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    question_no INT,
+    question TEXT,
+    option1 TEXT,
+    option2 TEXT,
+    option3 TEXT,
+    option4 TEXT,
+    correctOption TEXT,
+    image_url TEXT,
+    tags TEXT
+  )`;
+
+  pool.query(createTableQuery, (err, result) => {
+    if (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Failed to create table' });
+    } else {
+      // Insert the selected questions into the table
+      const insertQuery = `INSERT INTO ${tableName} (question_no, question, option1, option2, option3, option4, correctOption, image_url, tags) VALUES ?`;
+
+      // Prepare the values for insertion
+      const values = selectedQuestions.map((question) => [
+        question.question_no,
+        question.question,
+        question.option1,
+        question.option2,
+        question.option3,
+        question.option4,
+        question.correctOption,
+        question.image_url,
+        question.Tags,
+      ]);
+
+      pool.query(insertQuery, [values], (err, result) => {
+        if (err) {
+          console.error(err);
+          res.status(500).json({ message: 'Failed to insert questions into table' });
+        } else {
+          pool.query('UPDATE test_description SET status = ? WHERE test_id = ?',[status,testId],(err,result)=>{
+            if(err){
+              console.error(err);
+              res.status(500).json({ message: 'Failed to  update status' });
+            }else{
+              res.status(200).json({message : 'Test is created Sucessfully'});
+            }
+          });
+        }
+      });
+    }
+  });
+});
+
+// Route to fetch total test
+router.get('/test', (req, res) => {
+  const className = req.query.class;
+  const subject_name  = req.query.subject;
+  const chapter_name  = req.query.chapter;
+  const topic_name  = req.query.topic;
+  console.log(className,subject_name,chapter_name,topic_name);
+  pool.query('SELECT * FROM test_description WHERE class = ? AND subject_name = ? AND topic_name = ? AND chapter_name = ? AND status=?',[className, subject_name,topic_name,chapter_name,'publish'], (err, results) => {
+    if (err) {
+      console.error('Error fetching total questions:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      console.log('test descriptions extracted and sended sucessfully');
+      console.log(results);
+      res.status(200).json(results);
+    }
+  });
+});
+
+//route to get test questions
+router.get('/fetch/test-questions',upload.none(),(req,res)=>{
+  const test_id = req.query.test_id;
+  const table_name  = "test_"+test_id;
+  pool.query('SELECT * FROM '+table_name,(err,result)=>{
+    if(err){
+      console.log(err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }else{
+      res.status(200).json(result);
+    }
+  })
+})
+
+
+// Route to fetch total test
+router.get('/save-test', (req, res) => {
+  const className = req.query.class;
+  const subject_name  = req.query.subject;
+  const chapter_name  = req.query.chapter;
+  const topic_name  = req.query.topic;
+  console.log(className,subject_name,chapter_name,topic_name);
+  pool.query('SELECT * FROM test_description WHERE class = ? AND subject_name = ? AND topic_name = ? AND chapter_name = ? AND status=?',[className, subject_name,topic_name,chapter_name,'save'], (err, results) => {
+    if (err) {
+      console.error('Error fetching total questions:', err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      console.log('test descriptions extracted and sended sucessfully');
+      console.log(results);
+      res.status(200).json(results);
+    }
+  });
+});
+
+//route to get test questions
+router.get('/fetch/save-test-questions',upload.none(),(req,res)=>{
+  const test_id = req.query.test_id;
+  const table_name  = "save_test_"+test_id;
+  pool.query('SELECT * FROM '+table_name,(err,result)=>{
+    if(err){
+      console.log(err);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }else{
+      res.status(200).json(result);
+    }
+  })
+})
+
+router.post('/upload-csv', upload.fields([{ name: 'file1' }, { name: 'file2' }]), function(req, res) {
+  const file1 = req.files['file1'][0];
+  const file2 = req.files['file2'][0];
+  
+  // Process CSV file 1
+  fs.createReadStream(file1.path)
+    .pipe(csv())
+    .on('data', function(row) {
+      // Check conditions in database table class_questionSet
+      const query = 'SELECT * FROM class_questionSet WHERE class = ? AND subject_name = ? AND chapter_name = ? AND topic_name = ?';
+      const values = [row.class, row.subject_name, row.chapter_name, row.topic_name];
+      pool.query(query, values, function(error, results) {
+        if (error) {
+          console.error(error);
+          res.status(500).json({ message: 'An error occurred while checking conditions' });
+        } else {
+          if (results.length === 0) {
+            // Insert row into table class_questionSet
+            const insertQuery = 'INSERT INTO class_questionSet (class, subject_name, chapter_name, topic_name, question_set) VALUES (?, ?, ?, ?, ?)';
+            const insertValues = [row.class, row.subject_name, row.chapter_name, row.topic_name, row.question_set];
+            
+            pool.query(insertQuery, insertValues, function(insertError) {
+              if (insertError) {
+                console.error(insertError);
+              }
+            });
+          }
+        }
+      });
+    })
+    .on('end', function() {
+      // Process CSV file 2
+      fs.createReadStream(file2.path)
+        .pipe(csv())
+        .on('data', function(row) {
+          const tableName = 'question_set' + row.question_set;
+          
+          // Check if table exists
+          const checkTableQuery = "SHOW TABLES LIKE ?";
+          const checkTableValues = [tableName];
+          
+          pool.query(checkTableQuery, checkTableValues, function(checkError, checkResults) {
+            if (checkError) {
+              console.error(checkError);
+              res.status(500).json({ message: 'An error occurred while checking table existence' });
+            } else {
+              if (checkResults.length === 0) {
+                // Create table with the tableName
+                const createTableQuery = "CREATE TABLE ?? (id INT AUTO_INCREMENT PRIMARY KEY, question VARCHAR(255), option1 VARCHAR(255), option2 VARCHAR(255), option3 VARCHAR(255), option4 VARCHAR(255), correctOption VARCHAR(255), image_url VARCHAR(255), tags VARCHAR(255))";
+                const createTableValues = [tableName];
+                
+                pool.query(createTableQuery, createTableValues, function(createError) {
+                  if (createError) {
+                    console.error(createError);
+                  }
+                });
+              }
+              
+              // Insert data into the table
+              const insertDataQuery = "INSERT INTO ?? (question, option1, option2, option3, option4, correctOption, image_url, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+              const insertDataValues = [tableName, row.question, row.option1, row.option2, row.option3, row.option4, row.correctOption, row.image_url, row.tags];
+              
+              pool.query(insertDataQuery, insertDataValues, function(insertDataError) {
+                if (insertDataError) {
+                  console.error(insertDataError);
+                }
+              });
+            }
+          });
+        })
+        .on('end', function() {
+          res.json({ message: 'CSV files uploaded successfully' });
+        });
+    });
+});
+
 
 module.exports =router; 
