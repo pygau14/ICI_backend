@@ -6,12 +6,30 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const pool = require('./db');
 const bodyParser = require('body-parser');
+
+// Parse JSON bodies
+router.use(bodyParser.json());
+
+// Parse URL-encoded bodies
+router.use(bodyParser.urlencoded({ extended: true }));
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
 
 
 const storage = multer.memoryStorage();
 const upload = multer({storage : storage});
+
+// Configure nodemailer for sending emails
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: '1hk16ec023@hkbk.edu.in',
+    pass: 'bmtkcrfwdswsribn'
+  }
+});
 
 //sign up route
 router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
@@ -27,7 +45,7 @@ router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
 
   try {
     try {
-      await pool.query('INSERT INTO users (name, email, password,doj) VALUES (?, ?, ?)',[name, email , hashedPassword,doj],(error,result)=>{
+      await pool.query('INSERT INTO users (name, email, password,doj,mobile_no) VALUES (?, ?, ?,?,?)',[name, email , hashedPassword,doj,mobile_no],(error,result)=>{
         if(error){
           console.log(error);
           if(error.errno == 1062){
@@ -107,6 +125,120 @@ router.post('/login',upload.none(),async(req,res)=>{
   }
 });
 
+// Middleware to parse JSON data
+router.use(express.json());
+// Route to handle the password reset submission
+router.post('/reset-password',upload.none(), async (req, res) => {
+  const email = req.body.email;
+  console.log(req.body);
+  console.log(email);
+
+  // Check if the email exists in the users table
+  const checkEmailQuery = `SELECT * FROM users WHERE email = '${email}'`;
+
+  pool.query(checkEmailQuery, (err, result) => {
+    if (err) {
+      console.error('Error checking email:', err);
+      res.status(500).send('An error occurred');
+      return;
+    }
+
+    if (result.length === 0) {
+      // Email does not exist in the database
+      res.status(400).send('Email not found');
+    } 
+    else {
+      console.log('email is found')
+      // Generate a unique reset token (you can use libraries like 'uuid' for this)
+      const resetToken = 'your_reset_token';
+
+      // Save the reset token in the database
+      const saveTokenQuery = `UPDATE users SET reset_token = '${resetToken}' WHERE email = '${email}'`;
+
+      pool.query(saveTokenQuery, (err, result) => {
+        if (err) {
+          console.error('Error saving reset token:', err);
+          res.status(500).send('An error occurred');
+          return;
+        }
+
+        // Compose the reset email
+        const resetUrl = `http://localhost:3000/reset-password/new?token=${resetToken}`;
+        const mailOptions = {
+          from: '1hk16ec023@hkbk.edu.in',
+          to: email,
+          subject: 'Password Reset',
+          html: `<p>Please click the following link to reset your password:</p>
+                <a href="${resetUrl}">${resetUrl}</a>`
+        };
+
+        // Send the reset email
+        transporter.sendMail(mailOptions, (err, info) => {
+          if (err) {
+            console.error('Error sending reset email:', err);
+            res.status(500).send('An error occurred');
+            return;
+          }
+          console.log('Reset email sent:', info.response);
+          res.send('Reset email sent');
+        });
+      })
+    }
+});
+});
+
+// Route to render the new password page
+router.get('/reset-password/new', (req, res) => {
+  const token = req.query.token;
+
+  // Verify the reset token in the users table
+  const verifyTokenQuery = `SELECT * FROM users WHERE reset_token = '${token}'`;
+
+  pool.query(verifyTokenQuery, (err, result) => {
+    if (err) {
+      console.error('Error verifying reset token:', err);
+      res.status(500).send('An error occurred');
+      return;
+    }
+
+    if (result.length === 0) {
+      // Invalid reset token
+      res.status(400).send('Invalid reset token');
+    } else {
+      res.sendFile(__dirname + '/newPassword.html');
+    }
+  });
+});
+
+ // Route to handle the new password submission
+router.post('/reset-password/new', (req, res) => {
+  const token = req.query.token;
+  const newPassword = req.body.newPassword;
+
+  // Hash the new password with bcrypt
+  bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+    if (err) {
+      console.error('Error hashing password:', err);
+      res.status(500).send('An error occurred');
+      return;
+    }
+
+    // Update the password in the users table
+    const updatePasswordQuery = `UPDATE users SET password = '${hashedPassword}', reset_token = NULL WHERE reset_token = '${token}'`;
+
+    pool.query(updatePasswordQuery, (err, result) => {
+      if (err) {
+        console.error('Error updating password:', err);
+        res.status(500).send('An error occurred');
+        return;
+      }
+
+      console.log('Password updated');
+      res.send('Password updated');
+    });
+  });
+}); 
+
 
 router.post('/admin-login',upload.none(),async (req,res)=>{
   const {email , password}  =req.body;
@@ -117,7 +249,8 @@ router.post('/admin-login',upload.none(),async (req,res)=>{
         console.log(err);
         res.json(500).json({message : 'Internal Server error'});
       }else {
-        const token = jwt.sign({userID : result[0].id,name : result[0].name, email : result[0].email},'secret',{ expiresIn: '1h' });
+        console.log(result);
+        const token = jwt.sign({userID : result[0].admin_id,name : result[0].name, email : result[0].email},'secret',{ expiresIn: '1h' });
         res.cookie('token', token, { httpOnly: true });
         res.status(200).json({token : token ,message : 'Login Sucessful', userID: result[0].id, name : result[0].name,email : result[0].email});
       }
@@ -448,16 +581,42 @@ router.get('/api/paidStudents', (req, res) => {
 
 // Route to fetch total questions
 router.get('/api/totalTests', (req, res) => {
-  pool.query('SELECT question_set FROM class_questionSet', (err, results) => {
+  const query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE 'question_%'";
+
+  pool.query(query, (err, result) => {
     if (err) {
-      console.error('Error fetching total questions:', err);
-      res.status(500).json({ error: 'Internal Server Error' });
-    } else {
-      const newArr = [];
-      results.map(result=>newArr.push(result.question_set));
-      const result  = [...new Set(newArr)];
-      res.status(200).json(result);
+      console.error('Error fetching table names:', err);
+      res.status(500).json({ error: 'An error occurred' });
+      return;
     }
+
+    const tables = result.map(row => row.TABLE_NAME);
+
+    const promises = tables.map(table => {
+      return new Promise((resolve, reject) => {
+        const countQuery = `SELECT COUNT(*) AS total FROM ${table}`;
+
+        pool.query(countQuery, (err, result) => {
+          if (err) {
+            console.error(`Error fetching total questions from ${table}:`, err);
+            reject(err);
+          } else {
+            resolve(result[0].total);
+          }
+        });
+      });
+    });
+
+    Promise.all(promises)
+      .then(results => {
+        const total = results.reduce((sum, count) => sum + count, 0);
+        console.log(total);
+        res.status(200).json({ total });
+      })
+      .catch(error => {
+        console.error('Error fetching total questions:', error);
+        res.status(500).json({ error: 'An error occurred' });
+      });
   });
 });
 
@@ -720,6 +879,22 @@ router.post('/upload-csv', upload.fields([{ name: 'file1' }, { name: 'file2' }])
         });
     });
 });
+
+router.get('/testNumber',upload.none(), async (req,res)=>{
+  const query = "SELECT COUNT(*) AS total FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE 'test_%'";
+
+  pool.query(query, (err, result) => {
+    if (err) {
+      console.error('Error fetching total tests:', err);
+      res.status(500).json({ error: 'An error occurred' });
+      return;
+    }
+
+    const total = result[0].total;
+    console.log(total)
+    res.json({ total });
+  });
+})
 
 
 module.exports =router; 
