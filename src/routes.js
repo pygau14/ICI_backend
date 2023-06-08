@@ -242,6 +242,8 @@ router.post('/reset-password/new', (req, res) => {
 
 router.post('/admin-login',upload.none(),async (req,res)=>{
   const {email , password}  =req.body;
+  console.log('Admin login Needed');
+  console.log(email , password);
 
   try{
     pool.query('SELECT * FROM admin_users WHERE email = ? AND PASSWORD = ?',[email, password],(err, result)=>{
