@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const pool = require('./db');
 const bodyParser = require('body-parser');
+const {google} = require('googleapis');
 
 // Parse JSON bodies
 router.use(bodyParser.json());
@@ -19,6 +20,9 @@ const nodemailer = require('nodemailer');
 
 const storage = multer.memoryStorage();
 const upload = multer({storage : storage});
+
+const ncertupload = multer({ dest: 'src/NCERT/' });
+
 
 // Configure nodemailer for sending emails
 const transporter = nodemailer.createTransport({
@@ -76,6 +80,56 @@ router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
   }
 });
 
+
+// API's for google sign in 
+// Endpoint for initiating Google Sign-in
+router.get('/auth/google', (req, res) => {
+  const url = oauth2Client.generateAuthUrl({
+    scope: [
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile',
+    ],
+  });
+  res.redirect(url);
+});
+
+
+// Callback endpoint for handling the Google Sign-in callback
+router.get('/auth/callback', async (req, res) => {
+  const { code } = req.query;
+
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const userInfo = await oauth2.userinfo.get();
+
+    // Extract necessary user information
+    const email = userInfo.data.email;
+   // You need to add a method to fetch the mobile number
+    const name = userInfo.data.name;
+
+    // Store user information in the MySQL database
+    const user = {
+      email,
+      name,
+    };
+
+    pool.query('INSERT INTO users SET ?', user, (error, results) => {
+      if (error) {
+        console.error('Error storing user in database:', error);
+        res.status(500).send('Error storing user in database');
+      } else {
+        console.log('User stored in database:', results);
+        res.send('User stored in database');
+      }
+    });
+  } catch (error) {
+    console.error('Error authenticating with Google:', error);
+    res.status(500).send('Error authenticating with Google');
+  }
+});
 
 router.use(bodyParser.urlencoded({ extended: true }));
 router.use(bodyParser.json());
@@ -239,6 +293,33 @@ router.post('/reset-password/new', (req, res) => {
   });
 }); 
 
+router.post('/resetPassword/admin',upload.none(), async (req,res)=>{
+  const { email,oldpassword , newpassword } = req.body;
+  console.log(email , newpassword);
+  try {
+    // Generate the hashed password using bcrypt with 10 rounds of hashing
+    const hashedPassword = await bcrypt.hash(newpassword, 10);
+   
+    // Update the hashed password in the "users" table where email matches
+    pool.query('UPDATE users SET password = ? WHERE email = ? ', [hashedPassword, email],(err, results)=>{
+      if(err){
+        console.log(err);
+        res.status(500).json({message: 'Internal server error'});
+      }
+      else{
+        // Send a success response
+      console.log(results);
+      res.status(200).json({ message: 'Password updated successfully' });
+      }
+    }); 
+  } catch (error) {
+    // Handle any errors that occur during the process
+    console.error(error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+
+})
+
 
 router.post('/admin-login',upload.none(),async (req,res)=>{
   const {email , password}  =req.body;
@@ -253,7 +334,7 @@ router.post('/admin-login',upload.none(),async (req,res)=>{
       }else {
         console.log(result);
         const token = jwt.sign({userID : result[0].admin_id,name : result[0].name, email : result[0].email},'secret',{ expiresIn: '1h' });
-        res.cookie('token', token, { httpOnly: true });
+        res.cookie('token2', token, { httpOnly: true });
         res.status(200).json({token : token ,message : 'Login Sucessful', userID: result[0].id, name : result[0].name,email : result[0].email});
       }
     })
@@ -377,7 +458,51 @@ router.get('/api/courses',async (req,res)=>{
     console.error('Error fetching course',error);
     res.status(500).json({message : 'Error fetching course'})
   }
+});
+
+// Handle GET request to '/students'
+router.get('/students/details', (req, res) => {
+  // Fetch data from the user_detail table
+  pool.query('SELECT * FROM user_details', (error, results) => {
+    if (error) throw error;
+    console.log(results);
+    res.status(200).json(results);
+  });
+});
+
+// Handle GET request to '/users'
+router.get('/users', (req, res) => {
+  const { email } = req.query;
+  console.log(email);
+
+  // Fetch data from the users table based on the email
+  pool.query('SELECT doj, id FROM users WHERE email = ?', [email], (error, results) => {
+    if (error) throw error;
+
+    res.json(results[0]);
+  });
+});
+
+//route for uplaoding the ebook
+router.post('/upload/ebook',ncertupload.single('pdf'),async (req,res)=>{
+  const { className, subject_name } = req.body;
+  const pdfFileName = req.file.originalname;
+
+  console.log(className,subject_name,pdfFileName);
+
+  // Store data in the database
+  const insertQuery = 'INSERT INTO `ncert_books` (class, subject_name, pdf_fileName) VALUES (?, ?, ?)';
+
+  pool.query(insertQuery, [className, subject_name, pdfFileName], (err, result) => {
+    if (err) {
+      console.error('Error inserting data into database:', err);
+      return res.status(500).json({ error: 'Failed to insert data into database' });
+    }
+
+    res.status(200).json({ message: 'Data and file uploaded successfully' });
+  });
 })
+
 
 
 // router for storing courses added by user
