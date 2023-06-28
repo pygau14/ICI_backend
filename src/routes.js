@@ -217,7 +217,7 @@ router.post('/reset-password',upload.none(), async (req, res) => {
         }
 
         // Compose the reset email
-        const resetUrl = `http://localhost:3000/reset-password/new?token=${resetToken}`;
+        const resetUrl = `https://ici-backend.onrender.com/reset-password/new?token=${resetToken}`;
         const mailOptions = {
           from: '1hk16ec023@hkbk.edu.in',
           to: email,
@@ -321,6 +321,7 @@ router.post('/resetPassword/admin',upload.none(), async (req,res)=>{
 })
 
 
+
 router.post('/admin-login',upload.none(),async (req,res)=>{
   const {email , password}  =req.body;
   console.log('Admin login Needed');
@@ -345,69 +346,21 @@ router.post('/admin-login',upload.none(),async (req,res)=>{
 })
 
 
-router.get('/subjects/:class',upload.none(),async (req,res)=>{
-  const selectedClass = req.params.class;
-  const client = await pool.connect();
-
-  client.query('SELECT subjects_list FROM classes_sub WHERE class=$1',[selectedClass],(error,results)=>{
-    if(error){
-      console.error(error);
-      res.status(500).json({message :'Internal Server Error'});
-    }
-    else {
-      const subjectsArr = results.rows[0].subjects_list;
-      const subjects_list = subjectsArr.map(subject=>subject.trim());
-      res.status(200).json(subjects_list);
-      client.release();
-    }
-  });
-
-});
 
 
-router.get('/chapters/:class/:subject_name',async (req,res)=>{
-  const selectedClass = req.params.class;
-  const subject_name = req.params.subject_name;
-  const client = await pool.connect();
-
-  client.query('SELECT chapters_list FROM class_sub_chapter WHERE class = $1 AND subject_name = $2',[selectedClass,subject_name],(error,results)=>{
-    if(error){
-      console.error(error);
-      res.status(400).json({message : 'Internal Server Error'});
-    }
-    else{
-      const chaptersArr = results.rows[0].chapters_list;
-      const chapters_list = chaptersArr.map(chapter=>chapter.trim());
-      res.status(200).json(chapters_list);
-    }
-  });
-});
-
-router.get('/topics/:class/:chapter_name',async(req,res)=>{
-  console.log('running 3rd gate');
-  const selectedClass = req.params.class;
-  const chapter_name = req.params.chapter_name;
-  const client = await pool.connect();
-
-  client.query('SELECT topics_list FROM class_chap_topic WHERE class = $1 AND chapter_name = $2',[selectedClass,chapter_name],(error,results)=>{
-    if(error){
-      console.error(error);
-      res.status(400).json({message : 'Internal server error'});
-    }
-    else{
-      const topicsArr = results.rows[0].topics_list;
-      const topics_list = topicsArr.map(topic=>topic.trim())
-      res.status(200).json(topics_list);
-    }
-  })
-})
 
 
+
+
+
+
+
+// total courses
 router.get('/api/courses',async (req,res)=>{
   try{
     // Query the popular_courses table for courses with ratings 4 and 5
     
-    pool.query('SELECT class, subject_name, chapter_name, topic_name, course_url, rating FROM popular2',(err,results)=>{
+    pool.query('SELECT  class, subject_name, chapter_name, topic_name, course_url, rating FROM popular2',(err,results)=>{
       if(err){
         console.log(err);
       }
@@ -460,10 +413,70 @@ router.get('/api/courses',async (req,res)=>{
   }
 });
 
-// Handle GET request to '/students'
+// Assuming you have already set up the required dependencies and database connection
+// router for storing courses added by user
+router.post('/api/add-course',upload.none(), async(req,res)=>{
+  const {name , email , className , subject_name, chapter_name , topics_name, course_url} = req.body;
+  try{
+    pool.query('INSERT INTO student_course (name , email , class, subject_name,chapter_name,topics_name,course_url) VALUES (?,?,?,?,?,?,?)',[name,email ,className,subject_name,chapter_name,topics_name,course_url],(err,result)=>{
+      if(err){
+        console.log(err);
+      }
+      console.log('student_course added');
+      res.status(200).json({message:'Course added successfully'})
+ ;   })
+  }catch(e){
+    console.log(e);
+    res.status(500).json({message:'Internal server error'});
+  }
+});
+
+// Route to handle the data retrieval for courses opted by user
+router.post('/fetch/student/course',upload.none(), (req, res) => {
+  const { name, email } = req.body;
+  console.log(name,email);
+
+  // Query to fetch data from the student_courses table
+  const query = `SELECT * FROM student_course WHERE name = ? AND email = ?`;
+
+  // Execute the query
+  pool.query(query, [name, email], (error, results) => {
+    if (error) {
+      console.error('Error executing MySQL query:', error);
+      res.status(500).json({ error: 'Error fetching data from the database' });
+    } else {
+      // Prepare the array of objects to send to the frontend
+      const data = results.map(result => ({
+        class: result.class,
+        subject_name: result.subject_name,
+        chapter_name: result.chapter_name,
+        topics_name : result.topics_name.split("+"),
+        course_url : result.course_url.split("+"),
+      }));
+
+      res.status(200).json(data);
+    }
+  });
+});
+
+
+
+
+// Handle GET request to '/students' user info for admin
 router.get('/students/details', (req, res) => {
   // Fetch data from the user_detail table
   pool.query('SELECT * FROM user_details', (error, results) => {
+    if (error) throw error;
+    console.log(results);
+    res.status(200).json(results);
+  });
+});
+
+// Handle GET request to '/students' for student dashboard
+router.get('/student/detail', (req, res) => {
+  const {email } = req.query;
+  // Fetch data from the user_detail table
+  pool.query('SELECT * FROM user_details WHERE email = ? ',[email], (error, results) => {
     if (error) throw error;
     console.log(results);
     res.status(200).json(results);
@@ -482,6 +495,54 @@ router.get('/users', (req, res) => {
     res.json(results[0]);
   });
 });
+
+//route to handle multiple user_id together for leaderboard
+
+router.get('/fetch/users/multiple', (req, res) => {
+  try {
+    const userIDs = req.query.user_ids.split('/'); // Split the user_ids string into an array
+    console.log(userIDs);
+    // Construct the SQL query with placeholders to prevent SQL injection
+    const query = 'SELECT id, name, email FROM users WHERE id IN (?)';
+    const queryParams = [userIDs]; // Pass the userIDs array as a query parameter
+
+    // Execute the query using the MySQL connection pool
+    pool.query(query, queryParams, (error, results) => {
+      if (error) {
+        console.error('Error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      } else {
+        res.status(200).json(results); // Send the rows as JSON response
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+//fetch count of chapter (opted by user) of multiple emails.
+router.get('/fetch/courses/multiple', (req, res) => {
+  // Get the string from the frontend
+  const emailString = req.query.emails;
+
+  // Split the string into an array of email IDs
+  const emailArray = emailString.split(',');
+
+  // Fetch the count of chapter_name for each email ID
+  const query = `SELECT email, COUNT(chapter_name) AS count FROM student_course WHERE email IN (?) GROUP BY email`;
+  pool.query(query, [emailArray], (error, results) => {
+    if (error) {
+      console.error('Error executing MySQL query:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+      return;
+    }
+    console.log("email count sent for courses");
+    res.status(200).json(results);
+  });
+});
+
 
 //route for uplaoding the ebook
 router.post('/upload/ebook',ncertupload.single('pdf'),async (req,res)=>{
@@ -505,22 +566,7 @@ router.post('/upload/ebook',ncertupload.single('pdf'),async (req,res)=>{
 
 
 
-// router for storing courses added by user
-router.post('/api/add-course',upload.none(), async(req,res)=>{
-  const {name , email , className , subject_name, chapter_name , topics_name, course_url} = req.body;
-  try{
-    pool.query('INSERT INTO student_course (name , email , class, subject_name,chapter_name,topics_name,course_url) VALUES (?,?,?,?,?,?,?)',[name,email ,className,subject_name,chapter_name,topics_name,course_url],(err,result)=>{
-      if(err){
-        console.log(err);
-      }
-      console.log('student_course added');
-      res.status(200).json({message:'Course added successfully'})
- ;   })
-  }catch(e){
-    console.log(e);
-    res.status(500).json({message:'Internal server error'});
-  }
-});
+
 
 // router for sending the ncert book data
 router.get('/api/ncert-books',upload.none(),async (req,res)=>{
@@ -864,6 +910,44 @@ router.post('/save-selected-questions',upload.none(), async (req, res) => {
   });
 });
 
+//route to fetch test by class and subject
+
+router.get('/test/details/student', (req, res) => {
+  const className = req.query.className;
+  const subjectName = req.query.subjectName;
+  console.log(className,subjectName);
+
+  // Construct the SQL query
+  const query = `SELECT * FROM test_description WHERE class = ? AND subject_name = ? AND status = 'publish'`;
+
+  // Execute the query
+  pool.query(query, [className, subjectName], (error, results) => {
+    if (error) {
+      console.error('Error executing query:', error);
+      res.status(500).json({ error: 'An error occurred while fetching the columns.' });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+//route to fetch the test_description  using test_id
+router.get('/test/description', (req, res) => {
+  const test_id = req.query.test_id;
+  // Construct the SQL query
+  const query = `SELECT * FROM test_description WHERE test_id = ? AND status = 'publish'`;
+
+  // Execute the query
+  pool.query(query, [test_id], (error, results) => {
+    if (error) {
+      console.error('Error executing query:', error);
+      res.status(500).json({ error: 'An error occurred while fetching the columns.' });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+
 // Route to fetch total test
 router.get('/test', (req, res) => {
   const className = req.query.class;
@@ -895,7 +979,9 @@ router.get('/fetch/test-questions',upload.none(),(req,res)=>{
       res.status(200).json(result);
     }
   })
-})
+});
+
+
 
 
 // Route to fetch total test
@@ -929,7 +1015,85 @@ router.get('/fetch/save-test-questions',upload.none(),(req,res)=>{
       res.status(200).json(result);
     }
   })
-})
+});
+
+//route to store user test results
+router.post('/user-tests',upload.none(), (req, res) => {
+  // Extract the data from the request body
+  const {
+    user_id,
+    test_id,
+    selectedOptions,
+    questionAttempted,
+    score,
+    wrongAnswersNo,
+    totalQuestions
+  } = req.body;
+
+  // Define the SQL query to insert data into the "user_test" table
+  const sql = `
+    INSERT INTO user_test (user_id, test_id, selectedOptions, questionAttempted, score, wrongAnswersNo, totalQuestions)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `;
+
+  // Execute the query with the provided data
+  pool.query(sql, [user_id, test_id, selectedOptions, questionAttempted, score, wrongAnswersNo, totalQuestions], (error, results) => {
+    if (error) {
+      console.error('Error inserting data:', error);
+      res.status(500).json({ message: 'Error inserting data' });
+    } else {
+      console.log('Data inserted successfully');
+      res.status(200).json({ message: 'Data inserted successfully' });
+    }
+  });
+});
+
+
+//route to fetch user test info
+router.get('/fetch/user/test', (req, res) => {
+  // Extract the user_id from the query parameter
+  const { user_id } = req.query;
+
+  // Define the SQL query to fetch data from the "user_test" table
+  const sql = `
+    SELECT * FROM user_test WHERE user_id = ?
+  `;
+
+  // Execute the query with the provided user_id
+  pool.query(sql, [user_id], (error, results) => {
+    if (error) {
+      console.error('Error fetching data:', error);
+      res.status(500).json({ message: 'Error fetching data' });
+    } else {
+      console.log('Data fetched successfully');
+      res.json(results);
+    }
+  });
+});
+
+
+//route to fetch all user test records for leaderboard
+router.get('/fetch/all-user', (req, res) => {
+  
+
+  // Define the SQL query to fetch data from the "user_test" table
+  const sql = `
+    SELECT * FROM user_test
+  `;
+
+  // Execute the query with the provided user_id
+  pool.query(sql,(error, results) => {
+    if (error) {
+      console.error('Error fetching data:', error);
+      res.status(500).json({ message: 'Error fetching data' });
+    } else {
+      console.log('All users Data fetched successfully for leaderboard');
+      res.status(200).json(results);
+    }
+  });
+});
+
+
 
 router.post('/upload-csv', upload.fields([{ name: 'file1' }, { name: 'file2' }]), function(req, res) {
   const file1 = req.files['file1'][0];
