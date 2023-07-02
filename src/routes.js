@@ -7,6 +7,7 @@ const multer = require('multer');
 const pool = require('./db');
 const bodyParser = require('body-parser');
 const {google} = require('googleapis');
+const uuid = require('uuid');
 
 // Parse JSON bodies
 router.use(bodyParser.json());
@@ -16,6 +17,7 @@ router.use(bodyParser.urlencoded({ extended: true }));
 const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+const { type } = require('os');
 
 
 const storage = multer.memoryStorage();
@@ -35,21 +37,72 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-//sign up route
-router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
-  const {name, email , password ,doj, mobile_no, dob , country , state , city , street_address , school_name, institute_name , courses , subjects } = req.body;
-  const profile_picture = req.file ? req.file.buffer : null ;
+const storage2 = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'src/user_images');
+  },
+  filename: function (req, file, cb) {
+    const { name, ext } = path.parse(file.originalname);
+    const uniqueFilename = uuid.v4(); // Generate a unique identifier
+    const newName = uniqueFilename + ext;
+    cb(null, newName);
+  }
+});
+const imageUpload = multer({ storage: storage2 }).single('image');
 
+// Route for image upload
+router.post('/upload/image', (req, res) => {
+  imageUpload(req, res, function (err) {
+    if (err) {
+      // Handle any errors that occurred during file upload
+      return res.status(500).json({ error: 'Image upload failed', msg: err });
+    }
+    console.log("image is received");
+    // File upload successful
+    const imageUrl = 'http://localhost:3000/user_images/' + req.file.filename;
+    console.log(req.file.filename);
+    res.status(200).json({imageUrl: imageUrl ,fileName : req.file.filename});
+  });
+});
+
+//sign up route
+router.post('/signup',upload.none(), async (req,res)=>{
+  const {name, email , password ,doj, mobile_no, dob , country , state , city , street_address , school_name, institute_name , courses , subjects ,profile_fileName} = req.body;
+ 
 
   // if (password !== confirmPassword){
   //   return res.status(400).json({message : 'Password do not match'});
   // }
 
+   // Check if any of the required fields are empty
+   if (
+    !name ||
+    !email ||
+    !password ||
+    !doj ||
+    !mobile_no ||
+    !dob ||
+    !country ||
+    !state ||
+    !city ||
+    !street_address ||
+    !school_name ||
+    !institute_name ||
+    !courses ||
+    !subjects ||
+    !profile_fileName
+  ) {
+    return res.status(400).json({ message : 'Please fill in all the required fields' });
+  }
+  console.log("data received from frontend");
+  console.log(name, email , password ,doj, mobile_no, dob , country , state , city , street_address , school_name, institute_name , courses , subjects ,profile_fileName);
+
   const hashedPassword  = await bcrypt.hash(password,10);
 
   try {
     try {
-      await pool.query('INSERT INTO users (name, email, password,doj,mobile_no) VALUES (?, ?, ?,?,?)',[name, email , hashedPassword,doj,mobile_no],(error,result)=>{
+      console.log("inserting data into users");
+       pool.query('INSERT INTO users (name, email, password,doj,mobile_no) VALUES (?, ?, ?,?,?)',[name, email , hashedPassword,doj,mobile_no],(error,result)=>{
         if(error){
           console.log(error);
           if(error.errno == 1062){
@@ -57,12 +110,14 @@ router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
           }
         }
         else {
-          pool.query('INSERT INTO user_details (name , email , mobile_no , dob, country , state, city , street_address , school_name , institute_name, courses, subjects) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',[name , email , mobile_no , dob,country, state, city, street_address, school_name , institute_name , courses,subjects],(err,results)=>{
+          console.log("data inserted in users table now inserting in user_details")
+
+          pool.query('INSERT INTO user_details (name , email , mobile_no , dob, country , state, city , street_address , school_name , institute_name, courses, subjects,profile_fileName) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',[name , email , mobile_no , dob,country, state, city, street_address, school_name , institute_name , courses,subjects,profile_fileName],(err,results)=>{
             if(err){
-              console.log(error);
+              console.log(err);
             }
             else{
-              console.log('Sign up done for this credentials')
+              console.log('Sign up done for this credentials');
               res.status(200).json({message : 'Sign Up Successfully'});
             }
           })
@@ -70,14 +125,58 @@ router.post('/signup',upload.single('profile_picture'), async(req,res)=>{
       });
     }
     catch(e){
+      console.log("Rolling back");
       await client.query('ROLLBACK');
+      console.log(e);
+      res.status()
       throw e;
+      
     }
   }
   catch(e){
     console.error(e);
     return res.status(500).json({message : 'Internal server error'});
   }
+});
+
+//route to handle profile updation by the user - profile edit
+router.post('/update/student/info', upload.none(), (req, res) => {
+  const { name, email, mobile_no, dob, country, state, city, street_address, school_name, institute_name, courses, subjects, profile_fileName } = req.body;
+
+  console.log(courses, subjects, profile_fileName);
+
+  // Update name and mobile_no columns in the users table
+  pool.query(
+    'UPDATE users SET name = ?, mobile_no = ? WHERE email = ?',
+    [name, mobile_no, email],
+    (error, result) => {
+      if (error) {
+        return res.status(500).json({ error: 'Error updating user information' });
+      }
+
+      // Construct the parameterized query for updating user_details table
+      let query = 'UPDATE user_details SET name = ?, mobile_no = ?, dob = ?, country = ?, state = ?, city = ?, street_address = ?, school_name = ?, institute_name = ?, courses = ?, subjects = ?';
+      const queryParams = [name, mobile_no, dob, country, state, city, street_address, school_name, institute_name, courses, subjects];
+
+      // Check if profile_fileName exists and is not null
+      if (profile_fileName) {
+        query += ', profile_fileName = ?';
+        queryParams.push(profile_fileName);
+      }
+
+      query += ' WHERE email = ?';
+      queryParams.push(email);
+
+      // Update columns in the user_details table
+      pool.query(query, queryParams, (error, result) => {
+        if (error) {
+          return res.status(500).json({ error: 'Error updating user details' });
+        }
+
+        return res.status(200).json({ message: 'User information updated successfully' });
+      });
+    }
+  );
 });
 
 
@@ -1185,7 +1284,148 @@ router.get('/testNumber',upload.none(), async (req,res)=>{
     console.log(total)
     res.json({ total });
   });
-})
+});
+
+// Define the route to handle receiving the array of objects and storing them as new rows
+router.post('/user_ranks',upload.none(), async (req, res) => {
+   try {
+    const { dataStr } = req.body; // Assuming the array of objects is sent in the 'data' field
+    const data = JSON.parse(dataStr);
+    console.log(data);
+    // Iterate over the array and create a new row for each object
+    for (const obj of data) {
+      const query = 'INSERT INTO user_ranks (user_id, rank, score) VALUES (?, ?, ?)';
+      const values = [obj.user_id, obj.rank, obj.score];
+
+      // Execute the query using the existing MySQL connection
+      await pool.query(query, values);
+    }
+
+    res.status(200).json({ message: 'Objects stored successfully' });
+  } catch (error) {
+    console.error('Error storing objects:', error);
+    res.status(500).json({ message: 'An error occurred' });
+  }
+});
+
+// Define the route to fetch score and rank for a user
+router.get('/student/rank', (req, res) => {
+  try {
+    const { user_id } = req.query;
+
+    // Execute the query to fetch score and rank from user_ranks table
+    pool.query(
+      'SELECT score, rank FROM user_ranks WHERE user_id = ?',
+      [user_id],
+      (error, results) => {
+        if (error) {
+          console.error('Error fetching user rank:', error);
+          res.status(500).json({ message: 'An error occurred' });
+        } else if (results.length === 0) {
+          res.status(404).json({ message: 'User not found' });
+        } else {
+          const { score, rank } = results[0];
+          res.status(200).json({ score, rank });
+        }
+      }
+    );
+  } catch (error) {
+    console.error('Error fetching user rank:', error);
+    res.status(500).json({ message: 'An error occurred' });
+  }
+});
+
+// Route 1: Insert data into user_notes table
+router.post('/student/notes',upload.none(), (req, res) => {
+  const { user_id, question_set, note, question_details } = req.body;
+  const query = 'INSERT INTO user_notes (user_id, question_set, note, question_details) VALUES (?, ?, ?, ?)';
+  const values = [user_id, question_set, note, question_details];
+  
+  pool.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Error inserting data into user_notes:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+    } else {
+      res.status(200).json({ message: 'Data inserted successfully' });
+    }
+  });
+});
+
+// Route 2: Fetch data from user_notes table
+router.get('/student/fetch/notes',upload.none(), (req, res) => {
+  const { question_set, user_id } = req.query;
+  const query = 'SELECT * FROM user_notes WHERE question_set = ? AND user_id = ?';
+  const values = [question_set, user_id];
+  
+  pool.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Error fetching data from user_notes:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+// Route 3: Insert data into user_bookmarks table
+router.post('/student/bookmarks',upload.none(), (req, res) => {
+  const { user_id, question_set, question_details } = req.body;
+  const query = 'INSERT INTO user_bookmarks (user_id, question_set, question_details) VALUES (?, ?, ?)';
+  const values = [user_id, question_set, question_details];
+  
+  pool.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Error inserting data into user_bookmarks:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+    } else {
+      res.status(200).json({ message: 'Data inserted successfully' });
+    }
+  });
+});
+
+// Route 4: Fetch data from user_bookmarks table
+router.get('/student/fetch/bookmarks',upload.none(), (req, res) => {
+  const { question_set, user_id } = req.query;
+  const query = 'SELECT * FROM user_bookmarks WHERE question_set = ? AND user_id = ?';
+  const values = [question_set, user_id];
+  
+  pool.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Error fetching data from user_bookmarks:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+    } else {
+      res.status(200).json(results);
+    }
+  });
+});
+
+router.get('/pdf/fetch/student', (req, res) => {
+  // Retrieve the class and subject from the query parameters
+  const { class: className, subject } = req.query;
+
+  
+    const query = 'SELECT pdf_fileName FROM ncert_books WHERE class = ? AND subject_name = ? LIMIT 1';
+    pool.query(query, [className, subject], (error, results) => {
+
+      if (error) {
+        console.error(error);
+        res.status(500).send('Database query error');
+        return;
+      }
+
+      if (results.length === 0) {
+        res.status(404).send('PDF not found');
+        return;
+      }
+
+      else{
+        console.log("shared pdf filename");
+        res.status(200).json(results);
+      }
+
+      
+    });
+});
 
 
 module.exports =router; 

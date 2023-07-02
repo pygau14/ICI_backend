@@ -37,6 +37,7 @@
     "passport-twitter": "^1.0.4",
     "path": "^0.12.7",
     "pg": "^8.11.0",
-    "pg-format": "^1.0.4"
+    "pg-format": "^1.0.4",
+    "uuid": "^9.0.0"
   }
 }
